@@ -1,0 +1,736 @@
+---
+title: "Covid NP Microbiome Baseline Statistics"
+author: "Youngapelian, M.J."
+date: "3/3/2022"
+output: html_document
+---
+
+# load libraries
+```{r include = FALSE}
+library(dplyr)
+library(tidyr)
+library(tidyverse)
+library(ggplot2)
+library(ggsci)
+library(data.table)
+library(dataRetrieval)
+library(readr)
+library(stats)
+library(psych)
+```
+
+# load metadata files from original and final filtered metadata
+```{r include = FALSE}
+full_metadata <- read_delim("/Users/mykajaapyoungapelian/covid-microbiome/metadataFiles/20220203_COVID_metadata.txt", "\t", escape_double = FALSE, trim_ws = TRUE)
+
+filtered_metadata <- read_delim("/Users/mykajaapyoungapelian/covid-microbiome/metadataFiles/finalMetadata/physeq_gen_final_mapping.txt", "\t", escape_double = FALSE, trim_ws = TRUE)
+```
+
+```{r}
+# create variables as numeric
+d <- data.table(full_metadata)
+
+# changing variables to numeric variables
+d$gender <- as.numeric(d$gender)
+d$death <- as.numeric(d$death)
+d$severity <- as.numeric(d$severity)
+d$smoking_status <- as.numeric(d$smoking_status)
+d$hosp_transfer <- as.numeric(d$hosp_transfer)
+d$icu_admit_UMCU <- as.numeric(d$icu_admit_UMCU)
+d$CCI <- as.numeric(d$CCI)
+d$fever_ceoccur_v2 <- as.numeric(d$fever_ceoccur_v2)
+d$fatigue <- as.numeric(d$fatigue)
+d$respiratory <- as.numeric(d$respiratory)
+d$oxygen_cmoccur <- as.numeric(d$oxygen_cmoccur)
+d$pre_antibiotic_use_2 <- as.numeric(d$pre_antibiotic_use_2)
+d$pre_antibiotic_category <- as.numeric(d$pre_antibiotic_category)
+d$antibiotic_cat_1 <- as.numeric(d$antibiotic_cat_1)
+d$antibiotic_cat_2 <- as.numeric(d$antibiotic_cat_2)
+d$antibiotic_cat_3 <- as.numeric(d$antibiotic_cat_3)
+d$Ct <- as.numeric(d$Ct)
+d$`ng/ul` <- as.numeric(d$`ng/ul`)
+d$antibiotics_during_admit <- as.numeric(d$antibiotics_during_admit)
+d$switched_antibiotics_at_umcu <- as.numeric(d$switched_antibiotics_at_umcu)
+#summary(d)
+```
+
+# subset samples on covid positive / negative: age statistics
+```{r}
+covid_pos <- d[covid %in% c(1)]
+round(mean(covid_pos$age), 1) # mean age covid pos 63.3
+round(sd(covid_pos$age), 1) # sd age covid pos 14.2 
+length(covid_pos$age) # 189
+range(covid_pos$age) # 25 - 91
+#hist(covid_pos$age)
+#qqnorm(covid_pos$age) 
+#qqline(covid_pos$age)  
+
+covid_neg <- d[covid %in% c(0)]
+round(mean(covid_neg$age), 1) # mean age covid neg 52.3
+round(sd(covid_neg$age), 1) # sd age covid neg 18.5
+length(covid_neg$age) # 71
+range(covid_neg$age) # 21 - 90
+#hist(covid_neg$age)
+#qqplot(covid_neg$age)
+```
+
+# severity baseline statistics
+```{r include = FALSE}
+covid_pos$severity <- factor(covid_pos$severity, levels = c(1, 2, 3, 4))
+boxplot(covid_pos$severity)
+
+# summary statistics on age by severity 
+by(covid_pos$age, covid_pos$severity, describe)
+
+# severity group statistics across age (mean, sd, and range)
+tapply(covid_pos$age, covid_pos$severity, mean)
+tapply(covid_pos$age, covid_pos$severity, sd)
+tapply(covid_pos$age, covid_pos$severity, range)
+#boxplot(covid_pos$age ~ covid_pos$severity)
+
+# severity counts per group
+d[, .(x = sum(severity == 0))] #71 [27.3 %]
+d[, .(x = sum(severity == 1))] #34 [18.0 %]
+d[, .(x = sum(severity == 2))] #39 [20.6 %]
+d[, .(x = sum(severity == 3))] #79 [41.8 %]
+d[, .(x = sum(severity == 4))] #37 [19.6 %]
+round(100*(34/(71+ 34+39+79+37)), 1) #  calculate percentage pos/neg per severity
+round(100*(34/(34+39+79+37)), 1) # calculate percentage positive per severity 
+```
+
+# anova on age across severity levels 
+```{r}
+age_severity <- covid_pos[, .(age), by = severity]
+
+age_severity_model <- aov(age_severity$age ~ factor(age_severity$severity))
+summary(age_severity_model) #H0: Same mean; #H1: Different means 
+# p = 0.000961, at least one of the severity levels differs among age
+
+# complete tukey's post-hoc test for each comparison
+TukeyHSD(age_severity_model, conf.level = .95)
+# difference between mild-death (padj = 0.0066685) and moderate-death (padj = 0.0062876)
+```
+
+# t test on age across positive and negative samples 
+```{r}
+t.test(covid_pos$age, covid_neg$age)
+ #H0: Same mean; #H1: Different means 
+# p = 1.71e-05, the mean age between pos/neg is different
+#95 percent confidence interval: [6.150937; 15.797196]
+# sample estimates: mean of x: 63.26984; mean of y 52.29577
+```
+
+# fisher exact test on gender contingency table across severity 
+```{r}
+# severity count by gender 
+covid_pos[, .(x = sum(severity == 1)), by = gender]
+covid_pos[, .(x = sum(severity == 2)), by = gender]
+covid_pos[, .(x = sum(severity == 3)), by = gender]
+covid_pos[, .(x = sum(severity == 4)), by = gender]
+
+# gender proportion tables across severity 
+table_gender_severity <- table(covid_pos$gender, covid_pos$severity, useNA = "ifany")
+margin.table(table_gender_severity, 1) # calculate total genders
+margin.table(table_gender_severity, 2) # calculate all genders across severity levels 
+prop.table(table_gender_severity,1) # calculates proportions of variable across rows 
+prop.table(table_gender_severity,2) # calculates proportions of variable across columns 
+
+# fisher exact test
+fisher.test(table(covid_pos$gender, covid_pos$severity)) # without NA p = 0.0885
+fisher.test(table_gender_severity) # with NA: p-value = 0.0004022
+```
+
+# fisher exact test on gender contingency table across pos/neg 
+```{r}
+# pos/neg count by gender 
+covid_pos[, .(x = sum(covid == 1)), by = gender]
+covid_neg[, .(x = sum(covid == 0)), by = gender]
+
+# gender proportion tables across pos/neg 
+table_gender_pos_neg <- table(d$gender, d$covid, useNA = "ifany")
+margin.table(table_gender_pos_neg, 1) # calculate total genders
+margin.table(table_gender_pos_neg, 2) # calculate all genders across pos/neg levels 
+prop.table(table_gender_pos_neg,1) # calculates proportions of variable across rows 
+prop.table(table_gender_pos_neg,2) # calculates proportions of variable across columns 
+
+# fisher exact test
+fisher.test(table(d$gender, d$covid)) # without NA p = 0.2234
+fisher.test(table_gender_pos_neg) # with NA: p-value = 0.005
+```
+
+# smoking status baseline statistics by severity
+```{r}
+# 0 - no, 1 - yes, 2 - former, 3 - unknown, NA - Unknown 
+table_smoking_severity_NA <- table(covid_pos$smoking_status, covid_pos$severity, useNA = "always")
+table_smoking_severity <- table(covid_pos$smoking_status, covid_pos$severity)
+
+margin.table(table_smoking_severity_NA, 1) # calculate total smoking_status
+round(100*(margin.table(table_smoking_severity_NA, 1)/189), 1)
+
+margin.table(table_smoking_severity_NA, 2) # calculate all smoking_status across severity levels
+
+prop.table(table_smoking_severity_NA,1) # calculates proportions of variable across rows 
+prop.table(table_smoking_severity_NA,2) # calculates proportions of variable across columns
+round(100*(prop.table(table_smoking_severity_NA,2)), 1)
+
+# fisher exact test
+fisher.test(table_smoking_severity, simulate.p.value = TRUE) # without NA  and simulated pval p = 0.0896
+```
+
+# mean charleson comorbidity index baseline statistics by severity
+```{r}
+# summary statistics on cci by severity 
+cci_severity <- covid_pos[, .(CCI), by = severity]
+cci_severity[!is.na(CCI), .N, by = severity]
+cci_severity[!is.na(CCI), .(x_bar = mean(CCI)), by = severity]
+cci_severity[!is.na(CCI), .(x_sd = SD(CCI)), by = severity]
+cci_severity[!is.na(CCI), .(x_range = range(CCI)), by = severity]
+# overall mean, sd, and range 
+cci_severity[!is.na(CCI), .(x_bar = mean(CCI), x_sd = sd(CCI), x_range = range(CCI))]
+
+# anova of CCI amongst severity groups 
+cci_severity_model <- aov(cci_severity$CCI ~ factor(cci_severity$severity))
+summary(cci_severity_model) #H0: Same mean; #H1: different means 
+# p = 0.078, we can assume similar means 
+```
+
+# hospital transfered baseline statistics by severity 
+```{r}
+# 0 - no; # 1 - yes, NA 
+table_transfer_severity_NA <- table(covid_pos$hosp_transfer, covid_pos$severity, useNA = "always")
+table_transfer_severity <- table(covid_pos$hosp_transfer, covid_pos$severity)
+
+
+margin.table(table_transfer_severity_NA, 1) # calculate total hosp_transfer
+round(100*(margin.table(table_transfer_severity_NA, 1)/189), 1)
+
+#margin.table(table_transfer_severity_NA, 2) # calculate total group n across severity levels
+table_transfer_severity_NA # calculate each group n across severity 
+prop.table(table_transfer_severity_NA,1) # calculates proportions of variable across rows 
+prop.table(table_transfer_severity_NA,2) # calculates proportions of variable across columns
+round(100*(prop.table(table_transfer_severity_NA,2)), 1)
+
+# fisher exact test
+fisher.test(table_transfer_severity) # without NA pval p = 8.157e-06 
+```
+
+# admitted to icu baseline statistics by severity 
+```{r}
+# 0 - no; # 1 - yes, NA 
+table_icu_severity_NA <- table(covid_pos$icu_admit_UMCU, covid_pos$severity, useNA = "always")
+table_icu_severity <- table(covid_pos$icu_admit_UMCU, covid_pos$severity)
+
+
+margin.table(table_icu_severity_NA, 1) # calculate total icu_admit_UMCU
+round(100*(margin.table(table_icu_severity_NA, 1)/189), 1)
+
+#margin.table(table_icu_severity_NA, 2) # calculate total group n across severity levels
+table_icu_severity_NA # calculate each group n across severity 
+#prop.table(table_icu_severity_NA,1) # calculates proportions of variable across rows 
+prop.table(table_icu_severity_NA,2) # calculates proportions of variable across columns
+round(100*(prop.table(table_icu_severity_NA,2)), 1)
+
+# fisher exact test
+fisher.test(table_icu_severity) # without NA pval p = 2.62e-09 
+```
+
+# pre-antibiotic use baseline statistics 
+```{r}
+# 1 - yes, NA - unknown
+table_pre_antibiotic_severity_NA <- table(covid_pos$pre_antibiotic_use_2, covid_pos$severity, useNA = "always")
+table_pre_antibiotic_severity <- table(covid_pos$pre_antibiotic_use_2, covid_pos$severity, useNA = "no")
+
+
+margin.table(table_pre_antibiotic_severity_NA, 1) # calculate total pre_antibiotic_use_2
+round(100*(margin.table(table_pre_antibiotic_severity_NA, 1)/189), 1)
+
+#margin.table(table_pre_antibiotic_severity_NA, 2) # calculate total group n across severity levels
+table_pre_antibiotic_severity_NA # calculate each group n across severity 
+#prop.table(table_pre_antibiotic_severity_NA,1) # calculates proportions of variable across rows 
+#prop.table(table_pre_antibiotic_severity_NA,2) # calculates proportions of variable across columns
+round(100*(prop.table(table_pre_antibiotic_severity_NA,2)), 1)
+
+# fisher exact test
+fisher.test(table_pre_antibiotic_severity) # with NA pval p = 0.0001291
+```
+
+# mean bacterial dna baseline statistics 
+```{r}
+# summary statistics on bacterial dna by severity 
+bacterial_dna_severity <- covid_pos[, .(Ct), by = severity]
+bacterial_dna_severity[!is.na(Ct), .N, by = severity]
+
+# overall mean, sd, and range
+bacterial_dna_severity[!is.na(Ct), .(x_bar = round(mean(Ct),1), x_sd = round(sd(Ct), 1), x_range = round(range(Ct), 1))]
+
+# overall mean, sd, and range per group
+bacterial_dna_severity[!is.na(Ct), .(x_bar = round(mean(Ct),1), x_sd = round(sd(Ct), 1), x_range = round(range(Ct), 1)), by = severity]
+
+# anova of Ct amongst severity groups 
+bacterial_dna_severity_model <- aov(bacterial_dna_severity$Ct ~ factor(bacterial_dna_severity$severity))
+summary(bacterial_dna_severity_model) #H0: Same mean; #H1: different means 
+# p = 0.681, we can assume similar means 
+```
+
+# fever at admission baseline statistics
+```{r}
+# 0 - no, 1 - yes, NA - unknown
+table_fever_severity_NA <- table(covid_pos$fever_ceoccur_v2, covid_pos$severity, useNA = "always")
+table_fever_severity <- table(covid_pos$fever_ceoccur_v2, covid_pos$severity, useNA = "no")
+
+# calculate total fever_ceoccur_v2
+margin.table(table_fever_severity_NA, 1) 
+round(100*(margin.table(table_fever_severity_NA, 1)/189), 1)
+
+#margin.table(table_fever_severity_NA, 2) # calculate total group n across severity levels
+table_fever_severity_NA # calculate each group n across severity 
+#prop.table(table_fever_severity_NA,1) # calculates proportions of variable across rows 
+#prop.table(table_fever_severity_NA,2) # calculates proportions of variable across columns
+round(100*(prop.table(table_fever_severity_NA,2)), 1)
+
+# fisher exact test
+fisher.test(table_fever_severity) # pval p = 0.3624
+```
+
+# oxygen at admisison basleine statistics 
+```{r}
+# 0 - no, 1 - yes, NA - unknown
+table_oxygen_severity_NA <- table(covid_pos$oxygen_cmoccur, covid_pos$severity, useNA = "always")
+table_oxygen_severity <- table(covid_pos$oxygen_cmoccur, covid_pos$severity, useNA = "no")
+
+
+margin.table(table_oxygen_severity_NA, 1) # calculate total oxygen_cmoccur
+round(100*(margin.table(table_oxygen_severity_NA, 1)/189), 1)
+
+# margin.table(table_oxygen_severity_NA, 2) # calculate total group n across severity levels
+table_oxygen_severity_NA # calculate each group n across severity 
+# prop.table(table_oxygen_severity_NA,1) # calculates proportions of variable across rows 
+# prop.table(table_oxygen_severity_NA,2) # calculates proportions of variable across columns
+round(100*(prop.table(table_oxygen_severity_NA,2)), 1)
+
+# fisher exact test 
+fisher.test(table_oxygen_severity) # pval p = 0.6857
+```
+
+# fatigue at admission baseline statistics 
+```{r}
+# 0 - no, 1 - yes, NA - unknown
+table_fatigue_severity_NA <- table(covid_pos$fatigue, covid_pos$severity, useNA = "always")
+table_fatigue_severity <- table(covid_pos$fatigue, covid_pos$severity, useNA = "no")
+
+
+margin.table(table_fatigue_severity_NA, 1) # calculate total fatigue
+round(100*(margin.table(table_fatigue_severity_NA, 1)/189), 1)
+
+#margin.table(table_fatigue_severity_NA, 2) # calculate total group n across severity levels
+table_fatigue_severity_NA # calculate each group n across severity 
+#prop.table(table_fatigue_severity_NA,1) # calculates proportions of variable across rows 
+#prop.table(table_fatigue_severity_NA,2) # calculates proportions of variable across columns
+round(100*(prop.table(table_fatigue_severity_NA,2)), 1)
+
+# fisher exact test
+fisher.test(table_fatigue_severity) # with pval p = 0.2104
+```
+
+
+# started antibiotics during UMCU stay baseline statistics 
+```{r}
+# % change all dates to as.Date format
+# covid_pos$antibiotic_1_start_date <- as.Date(covid_pos$antibiotic_1_start_date)
+# covid_pos$antibiotic_2_start_date <- as.Date(covid_pos$antibiotic_2_start_date)
+# covid_pos$antibiotic_3_start_date <- as.Date(covid_pos$antibiotic_3_start_date)
+# covid_pos$presentation_UMCU <- as.Date(covid_pos$presentation_UMCU)
+
+# if antibiotic start date was before presentation date then they did not start antibiotics at UMCU
+antibitoics_no_start_umcu <- covid_pos[presentation_UMCU < antibiotic_1_start_date | presentation_UMCU < antibiotic_2_start_date | presentation_UMCU < antibiotic_3_start_date]
+
+# never took antibiotics 
+antibiotic_never_umcu <- covid_pos[is.na(pre_antibiotic_use_2) & is.na(antibiotic_1_start_date) & is.na(antibiotic_2_start_date) & is.na(antibiotic_3_start_date)]
+
+# select all rows where all medication start dates are >= to umcu admit date
+antibiotic_start_umcu_1 <- covid_pos[presentation_UMCU <= antibiotic_1_start_date | presentation_UMCU <= antibiotic_2_start_date | presentation_UMCU <= antibiotic_3_start_date, ab_start_umcu := "yes"]
+# 189 took antibiotics at UMCU
+
+
+
+
+
+
+```
+
+
+# switched to other antibiotics during umcu stay baseline statistics
+```{r}
+antibiotic_switch <- 
+```
+
+# proportion table of antibiotic categories 
+```{r}
+antibiotic_categories <- d[, .(pre_antibiotic_category, antibiotic_cat_1, antibiotic_cat_2, antibiotic_cat_3)]
+
+antibiotic_counts <- table(c(antibiotic_categories$pre_antibiotic_category, antibiotic_categories$antibiotic_cat_1, antibiotic_categories$antibiotic_cat_2, antibiotic_categories$antibiotic_cat_3),  useNA = "no")
+
+round(100* prop.table(antibiotic_counts), 1)
+```
+
+
+#######################################################################
+# baseline table statistics following exclusion criteria
+```{r}
+# create variables as numeric
+d <- data.table(filtered_metadata)
+
+# changing variables to numeric variables
+d$gender <- as.numeric(d$gender)
+d$death <- as.numeric(d$death)
+#d$severity <- as.numeric(d$severity)
+d$smoking_status <- as.numeric(d$smoking_status)
+d$hosp_transfer <- as.numeric(d$hosp_transfer)
+d$icu_admit_UMCU <- as.numeric(d$icu_admit_UMCU)
+d$CCI <- as.numeric(d$CCI)
+d$fever_ceoccur_v2 <- as.numeric(d$fever_ceoccur_v2)
+d$fatigue <- as.numeric(d$fatigue)
+d$respiratory <- as.numeric(d$respiratory)
+d$oxygen_cmoccur <- as.numeric(d$oxygen_cmoccur)
+d$pre_antibiotic_use_2 <- as.numeric(d$pre_antibiotic_use_2)
+d$pre_antibiotic_category <- as.numeric(d$pre_antibiotic_category)
+d$antibiotic_cat_1 <- as.numeric(d$antibiotic_cat_1)
+d$antibiotic_cat_2 <- as.numeric(d$antibiotic_cat_2)
+d$antibiotic_cat_3 <- as.numeric(d$antibiotic_cat_3)
+d$Ct <- as.numeric(d$Ct)
+d$`ng/ul` <- as.numeric(d$`ng/ul`)
+d$antibiotics_during_admit <- as.numeric(d$antibiotics_during_admit)
+d$switched_antibiotics_at_umcu <- as.numeric(d$switched_antibiotics_at_umcu)
+#summary(d)
+```
+
+# subset samples on covid positive / negative: age statistics
+```{r}
+covid_pos <- d[covid %in% c("positive")]
+round(mean(covid_pos$age), 1) # mean age covid pos 63.3
+round(sd(covid_pos$age), 1) # sd age covid pos 14.2 
+length(covid_pos$age) # 189
+range(covid_pos$age) # 25 - 91
+#hist(covid_pos$age)
+#qqnorm(covid_pos$age) 
+#qqline(covid_pos$age)  
+
+covid_neg <- d[covid %in% c("negative")]
+round(mean(covid_neg$age), 1) # mean age covid neg 52.3
+round(sd(covid_neg$age), 1) # sd age covid neg 18.5
+length(covid_neg$age) # 71
+range(covid_neg$age) # 21 - 90
+#hist(covid_neg$age)
+#qqplot(covid_neg$age)
+```
+
+
+# severity baseline statistics
+```{r include = FALSE}
+covid_pos$severity <- factor(covid_pos$severity, levels = c("mild", "moderate", "severe", "death"))
+#boxplot(covid_pos$severity)
+
+# summary statistics on age by severity 
+by(covid_pos$age, covid_pos$severity, describe)
+
+# severity group statistics across age (mean, sd, and range)
+round(tapply(covid_pos$age, covid_pos$severity, mean), 1)
+round(tapply(covid_pos$age, covid_pos$severity, sd), 1)
+tapply(covid_pos$age, covid_pos$severity, range)
+#boxplot(covid_pos$age ~ covid_pos$severity)
+
+# severity counts per group
+d[, .(x = sum(covid == "positive")), by = severity]
+round(100*(25/(91)), 1) # calculate percentage positive per severity 
+```
+
+# anova on age across severity levels 
+```{r}
+age_severity <- covid_pos[, .(age), by = severity]
+
+age_severity_model <- aov(age_severity$age ~ factor(age_severity$severity))
+summary(age_severity_model) #H0: Same mean; #H1: Different means 
+# p = 0.0473, at least one of the severity levels differs among age
+
+# complete tukey's post-hoc test for each comparison
+TukeyHSD(age_severity_model, conf.level = .95)
+# difference between mild-death (padj = 0.0493960)
+```
+
+# t test on age across positive and negative samples for selected
+```{r}
+t.test(covid_pos$age, covid_neg$age)
+ #H0: Same mean; #H1: Different means 
+# p = 0.0095, the mean age of pos/neg are different
+#95 percent confidence interval: [1.952942; 13.684421]
+# sample estimates: mean of x: 61.31868; mean of y 53.50000
+```
+# fisher exact test on gender contingency table across pos/neg 
+```{r}
+# pos/neg count by gender 
+covid_pos[, .(x = sum(covid == "positive")), by = gender]
+covid_neg[, .(x = sum(covid == "negative")), by = gender]
+
+# gender proportion tables across pos/neg 
+table_gender_pos_neg <- table(d$gender, d$covid, useNA = "ifany")
+margin.table(table_gender_pos_neg, 1) # calculate total genders
+margin.table(table_gender_pos_neg, 2) # calculate all pos/neg  
+prop.table(table_gender_pos_neg,1) # calculates proportions of variable across rows 
+prop.table(table_gender_pos_neg,2) # calculates proportions of variable across columns 
+
+# fisher exact test
+fisher.test(table(d$gender, d$covid)) # without NA p = 0.496
+fisher.test(table_gender_pos_neg) # with NA: p-value = 0.496
+```
+
+# fisher exact test on gender contingency table across severity 
+```{r}
+# severity count by gender 
+covid_pos[, .(x = sum(severity == 1)), by = gender]
+covid_pos[, .(x = sum(severity == 2)), by = gender]
+covid_pos[, .(x = sum(severity == 3)), by = gender]
+covid_pos[, .(x = sum(severity == 4)), by = gender]
+
+# gender proportion tables across severity 
+table_gender_severity <- table(covid_pos$gender, covid_pos$severity, useNA = "ifany")
+table_gender_severity
+margin.table(table_gender_severity, 1) # calculate total genders
+margin.table(table_gender_severity, 2) # calculate all genders across severity levels 
+prop.table(table_gender_severity,1) # calculates proportions of variable across rows 
+prop.table(table_gender_severity,2) # calculates proportions of variable across columns 
+round(100*prop.table(table_gender_severity,2), 1)
+
+# fisher exact test
+fisher.test(table(covid_pos$gender, covid_pos$severity)) # without NA p = 0.0885
+fisher.test(table_gender_severity) # with NA: p-value = 0.0004022
+```
+
+# smoking status baseline statistics by severity
+```{r}
+# 0 - no, 1 - yes, 2 - former, 3 - unknown, NA - Unknown 
+table_smoking_severity_NA <- table(covid_pos$smoking_status, covid_pos$severity, useNA = "always")
+table_smoking_severity <- table(covid_pos$smoking_status, covid_pos$severity)
+
+margin.table(table_smoking_severity_NA, 1) # calculate total smoking_status
+round(100*((margin.table(table_smoking_severity_NA, 1)/91)), 1)
+
+#margin.table(table_smoking_severity_NA, 2) # calculate all smoking_status across severity levels
+
+#prop.table(table_smoking_severity_NA,1) # calculates proportions of variable across rows 
+
+table_smoking_severity_NA
+prop.table(table_smoking_severity_NA,2) # calculates proportions of variable across columns
+round(100*(prop.table(table_smoking_severity_NA,2)), 1)
+
+# fisher exact test
+fisher.test(table_smoking_severity) # without NA pval p = 0.644
+```
+
+# mean charleson comorbidity index baseline statistics by severity
+```{r}
+# summary statistics on cci by severity 
+cci_severity <- covid_pos[, .(CCI), by = severity]
+cci_severity[!is.na(CCI), .N, by = severity]
+cci_severity[!is.na(CCI), .(x_bar = round(mean(CCI), 1), x_sd = round(sd(CCI), 1), x_range = round(range(CCI), 1)), by = severity]
+# overall mean, sd, and range 
+cci_severity[!is.na(CCI), .(x_bar = mean(CCI), x_sd = sd(CCI), x_range = range(CCI))]
+
+# anova of CCI amongst severity groups 
+cci_severity_model <- aov(cci_severity$CCI ~ factor(cci_severity$severity))
+summary(cci_severity_model) #H0: Same mean; #H1: different means 
+# p = 0.078, we can assume similar means 
+```
+
+# hospital transfered baseline statistics by severity 
+```{r}
+# 0 - no; # 1 - yes, NA 
+table_transfer_severity_NA <- table(covid_pos$hosp_transfer, covid_pos$severity, useNA = "always")
+table_transfer_severity <- table(covid_pos$hosp_transfer, covid_pos$severity)
+
+
+margin.table(table_transfer_severity_NA, 1) # calculate total hosp_transfer
+round(100*(margin.table(table_transfer_severity_NA, 1)/91), 1)
+
+#margin.table(table_transfer_severity_NA, 2) # calculate total group n across severity levels
+table_transfer_severity_NA # calculate each group n across severity 
+#prop.table(table_transfer_severity_NA,1) # calculates proportions of variable across rows 
+prop.table(table_transfer_severity_NA,2) # calculates proportions of variable across columns
+round(100*(prop.table(table_transfer_severity_NA,2)), 1)
+
+# fisher exact test
+fisher.test(table_transfer_severity) # without NA pval p = 8.157e-06 
+```
+
+# admitted to icu baseline statistics by severity 
+```{r}
+# 0 - no; # 1 - yes, NA 
+table_icu_severity_NA <- table(covid_pos$icu_admit_UMCU, covid_pos$severity, useNA = "always")
+table_icu_severity <- table(covid_pos$icu_admit_UMCU, covid_pos$severity)
+
+
+margin.table(table_icu_severity_NA, 1) # calculate total icu_admit_UMCU
+round(100*(margin.table(table_icu_severity_NA, 1)/189), 1)
+
+#margin.table(table_icu_severity_NA, 2) # calculate total group n across severity levels
+table_icu_severity_NA # calculate each group n across severity 
+#prop.table(table_icu_severity_NA,1) # calculates proportions of variable across rows 
+prop.table(table_icu_severity_NA,2) # calculates proportions of variable across columns
+round(100*(prop.table(table_icu_severity_NA,2)), 1)
+
+# fisher exact test
+fisher.test(table_icu_severity) # without NA pval p = 0.01452 
+```
+
+# pre-antibiotic use baseline statistics 
+```{r}
+# 1 - yes, NA - unknown
+table_pre_antibiotic_severity_NA <- table(covid_pos$pre_antibiotic_use_2, covid_pos$severity, useNA = "always")
+table_pre_antibiotic_severity <- table(covid_pos$pre_antibiotic_use_2, covid_pos$severity, useNA = "no")
+
+
+margin.table(table_pre_antibiotic_severity_NA, 1) # calculate total pre_antibiotic_use_2
+round(100*(margin.table(table_pre_antibiotic_severity_NA, 1)/91), 1)
+
+#margin.table(table_pre_antibiotic_severity_NA, 2) # calculate total group n across severity levels
+table_pre_antibiotic_severity_NA # calculate each group n across severity 
+#prop.table(table_pre_antibiotic_severity_NA,1) # calculates proportions of variable across rows 
+#prop.table(table_pre_antibiotic_severity_NA,2) # calculates proportions of variable across columns
+round(100*(prop.table(table_pre_antibiotic_severity_NA,2)), 1)
+
+# fisher exact test
+fisher.test(table_pre_antibiotic_severity_NA) # with NA pval p = 0.0001291
+```
+
+# mean bacterial load baseline statistics 
+```{r}
+# summary statistics on bacterial load by severity 
+bacterial_dna_severity <- covid_pos[, .(Ct), by = severity]
+bacterial_dna_severity[!is.na(Ct), .N, by = severity]
+
+# overall mean, sd, and range
+bacterial_dna_severity[!is.na(Ct), .(x_bar = round(mean(Ct),1), x_sd = round(sd(Ct), 1), x_range = round(range(Ct), 1))]
+
+# overall mean, sd, and range per group
+bacterial_dna_severity[!is.na(Ct), .(x_bar = round(mean(Ct),1), x_sd = round(sd(Ct), 1), x_range = round(range(Ct), 1)), by = severity]
+
+# anova of Ct amongst severity groups 
+bacterial_dna_severity_model <- aov(bacterial_dna_severity$Ct ~ factor(bacterial_dna_severity$severity))
+summary(bacterial_dna_severity_model) #H0: Same mean; #H1: different means 
+# p = 0.888, we can assume similar means 
+```
+
+# fever at admission baseline statistics
+```{r}
+# 0 - no, 1 - yes, NA - unknown
+table_fever_severity_NA <- table(covid_pos$fever_ceoccur_v2, covid_pos$severity, useNA = "always")
+table_fever_severity <- table(covid_pos$fever_ceoccur_v2, covid_pos$severity, useNA = "no")
+
+# calculate total fever_ceoccur_v2
+margin.table(table_fever_severity_NA, 1) 
+round(100*(margin.table(table_fever_severity_NA, 1)/189), 1)
+
+#margin.table(table_fever_severity_NA, 2) # calculate total group n across severity levels
+table_fever_severity_NA # calculate each group n across severity 
+#prop.table(table_fever_severity_NA,1) # calculates proportions of variable across rows 
+#prop.table(table_fever_severity_NA,2) # calculates proportions of variable across columns
+round(100*(prop.table(table_fever_severity_NA,2)), 1)
+
+# fisher exact test
+fisher.test(table_fever_severity) # pval p = 0.01015
+```
+
+# oxygen at admisison basleine statistics 
+```{r}
+# 0 - no, 1 - yes, NA - unknown
+table_oxygen_severity_NA <- table(covid_pos$oxygen_cmoccur, covid_pos$severity, useNA = "always")
+table_oxygen_severity <- table(covid_pos$oxygen_cmoccur, covid_pos$severity, useNA = "no")
+
+
+margin.table(table_oxygen_severity_NA, 1) # calculate total oxygen_cmoccur
+round(100*(margin.table(table_oxygen_severity_NA, 1)/189), 1)
+
+# margin.table(table_oxygen_severity_NA, 2) # calculate total group n across severity levels
+table_oxygen_severity_NA # calculate each group n across severity 
+# prop.table(table_oxygen_severity_NA,1) # calculates proportions of variable across rows 
+# prop.table(table_oxygen_severity_NA,2) # calculates proportions of variable across columns
+round(100*(prop.table(table_oxygen_severity_NA,2)), 1)
+
+# fisher exact test 
+fisher.test(table_oxygen_severity) # pval p = 0.2176
+```
+
+# fatigue at admission baseline statistics 
+```{r}
+# 0 - no, 1 - yes, NA - unknown
+table_fatigue_severity_NA <- table(covid_pos$fatigue, covid_pos$severity, useNA = "always")
+table_fatigue_severity <- table(covid_pos$fatigue, covid_pos$severity, useNA = "no")
+
+
+margin.table(table_fatigue_severity_NA, 1) # calculate total fatigue
+round(100*(margin.table(table_fatigue_severity_NA, 1)/189), 1)
+
+#margin.table(table_fatigue_severity_NA, 2) # calculate total group n across severity levels
+table_fatigue_severity_NA # calculate each group n across severity 
+#prop.table(table_fatigue_severity_NA,1) # calculates proportions of variable across rows 
+#prop.table(table_fatigue_severity_NA,2) # calculates proportions of variable across columns
+round(100*(prop.table(table_fatigue_severity_NA,2)), 1)
+
+# fisher exact test
+fisher.test(table_fatigue_severity) # with pval p = 0.087
+```
+
+```{r}
+# plots to display baseline data
+ageGender <- ggplot(data = d, 
+                    aes(x = gender, y = age, fill = gender)) +
+  geom_boxplot() +
+  xlab("gender") +
+  ylab("age")
+ageGender
+
+
+severityPlot <- ggplot(data = d, 
+                       aes(x = factor(severity), y = age, color = severity)) +
+  geom_boxplot() +
+  xlab("Severity Classes 1 - 4") +
+  ylab("Age")
+severityPlot
+
+# deaths 
+deathPlot <- ggplot(data = d, 
+                    aes(x = factor(death), y = age, color = death)) +
+  geom_boxplot() +
+  xlab("Death") +
+  ylab("Age")
+deathPlot
+
+posPlot <- ggplot(data = d, 
+                  aes(x = factor(covid), y = Age, color = covid)) +
+  geom_boxplot() +
+  xlab("covid") +
+  ylab("Age")
+posPlot
+
+ageSeverityScatter <- ggplot(data = d, 
+                             aes(x = Age, y = severity_class, color = Age)) +
+  geom_point()
+ageSeverityScatter
+
+countCovidAge <- ggplot(d, aes(x = Age)) + 
+  geom_histogram(aes(fill = covid))
+countCovidAge
+
+countDeath <- ggplot(d, aes(x = Age)) + 
+  geom_histogram(aes(fill = factor(death)))
+countDeath
+
+countQPCR <- ggplot(d, aes(x = `ng/ul`)) + 
+  geom_histogram(aes(fill = `ng/ul`))
+countQPCR
+
+countGender <- ggplot(d, aes(x = Age)) + 
+  geom_histogram(aes(fill = factor(gender)))
+countGender
+```
+
+rm(list = ls(all = T))

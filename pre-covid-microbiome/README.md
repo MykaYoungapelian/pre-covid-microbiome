@@ -1,0 +1,2 @@
+# pre-covid-microbiome
+This repository reflects the edited version of the main repository. It reflects the relevant analysis techniques for the nasopharyngeal microbiome and COVID-19 severity project at University Medical Center Utrecht titled: The Role of the Nasopharyngeal Microbiome in Predicting COVID-19 Severity. This project consisted of the thesis for Myka Jaap Youngapelian under the supervision of Prof. Dr. Fernanda Paganelli and Prof. Dr. Janneke van de Wijgert during February 2021 and May 2022. 
